@@ -1,0 +1,6 @@
+{
+  "name": "Satit E-Learning LMS Portal",
+  "description": "ระบบการเรียนรู้ดิจิทัลและบริหารจัดการวิชาการ โรงเรียนสาธิตเทศบาลเมืองราชบุรี เชื่อมโยงฐานข้อมูล Google Sheets แบบเรียลไทม์",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
