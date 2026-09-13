@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SCHOOL_LOGO_URL, VIDEO_THUMB_URL } from '../data/initialData';
-import { Student, StudentScore, CurriculumUnit, GradeLevel } from '../types';
+import { Student, StudentScore, CurriculumUnit, GradeLevel, SubLesson } from '../types';
 
 interface AdminPortalScreenProps {
   curriculum: CurriculumUnit[];
@@ -78,8 +78,23 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const [newLevelTrack, setNewLevelTrack] = useState('');
 
   const [showNewUnitModal, setShowNewUnitModal] = useState(false);
+  const [newUnitNumber, setNewUnitNumber] = useState<number>(curriculum.length + 1);
   const [newUnitTitle, setNewUnitTitle] = useState('');
   const [newUnitSubtitle, setNewUnitSubtitle] = useState('');
+  const [newUnitFirstLessonTitle, setNewUnitFirstLessonTitle] = useState('บทนำและเนื้อหาเริ่มต้น');
+
+  // Edit Unit State
+  const [showEditUnitModal, setShowEditUnitModal] = useState(false);
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
+  const [editUnitNumber, setEditUnitNumber] = useState<number>(1);
+  const [editUnitTitle, setEditUnitTitle] = useState('');
+  const [editUnitSubtitle, setEditUnitSubtitle] = useState('');
+
+  // Add Sub-lesson State
+  const [showAddLessonModal, setShowAddLessonModal] = useState(false);
+  const [newLessonTitle, setNewLessonTitle] = useState('');
+  const [newLessonDuration, setNewLessonDuration] = useState('20:00 นาที');
+  const [newLessonVideoUrl, setNewLessonVideoUrl] = useState('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
 
   // Tab 2 & 3 filters
   const [scoreSearch, setScoreSearch] = useState('');
@@ -203,25 +218,27 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     e.preventDefault();
     if (!newUnitTitle.trim()) return;
 
+    const assignedNumber = Number(newUnitNumber) || curriculum.length + 1;
     const newUnit: CurriculumUnit = {
       id: 'u-' + Date.now(),
-      unitNumber: curriculum.length + 1,
+      unitNumber: assignedNumber,
       title: newUnitTitle.trim(),
       subtitle: newUnitSubtitle.trim() || 'บทเรียนใหม่',
       lessonsCount: 1,
       lessons: [
         {
           id: 'l-' + Date.now(),
-          numberStr: `${curriculum.length + 1}.1`,
-          title: 'บทนำและเนื้อหาเริ่มต้น',
-          status: 'ร่าง',
+          numberStr: `${assignedNumber}.1`,
+          title: newUnitFirstLessonTitle.trim() || 'บทนำและเนื้อหาเริ่มต้น',
+          status: 'พร้อมสอน',
           duration: '15:00 นาที',
-          description: 'รายละเอียดเนื้อหาบทเรียนใหม่',
+          videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          description: 'รายละเอียดเนื้อหาและแนวคิดพื้นฐานของหน่วยการเรียนรู้นี้',
         },
       ],
       quiz: {
-        id: `QZ-U${curriculum.length + 1}`,
-        title: `แบบทดสอบหน่วยที่ ${curriculum.length + 1}: ${newUnitTitle.trim()}`,
+        id: `QZ-U${assignedNumber}`,
+        title: `แบบทดสอบหน่วยที่ ${assignedNumber}: ${newUnitTitle.trim()}`,
         assigned: true,
         totalScore: 0,
         questions: [],
@@ -231,9 +248,167 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     setCurriculum((prev) => [...prev, newUnit]);
     setSelectedUnitId(newUnit.id);
     setSelectedLessonId(newUnit.lessons[0].id);
+    setLessonTitle(newUnit.lessons[0].title);
+    setLessonDesc(newUnit.lessons[0].description || '');
+    setLessonVideoUrl(newUnit.lessons[0].videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
     setShowNewUnitModal(false);
     setNewUnitTitle('');
     setNewUnitSubtitle('');
+    setNewUnitNumber(curriculum.length + 2);
+  };
+
+  // Open Edit Unit Modal
+  const handleOpenEditUnit = (unit: CurriculumUnit) => {
+    setEditingUnitId(unit.id);
+    setEditUnitNumber(unit.unitNumber);
+    setEditUnitTitle(unit.title);
+    setEditUnitSubtitle(unit.subtitle || '');
+    setShowEditUnitModal(true);
+  };
+
+  // Save Edit Unit
+  const handleSaveEditUnit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUnitId || !editUnitTitle.trim()) return;
+
+    setCurriculum((prev) =>
+      prev.map((u) => {
+        if (u.id === editingUnitId) {
+          const updatedNumber = Number(editUnitNumber) || u.unitNumber;
+          return {
+            ...u,
+            unitNumber: updatedNumber,
+            title: editUnitTitle.trim(),
+            subtitle: editUnitSubtitle.trim(),
+            lessons: u.lessons.map((ls, idx) => ({
+              ...ls,
+              numberStr: `${updatedNumber}.${idx + 1}`,
+            })),
+            quiz: u.quiz
+              ? {
+                  ...u.quiz,
+                  title: `แบบทดสอบหน่วยที่ ${updatedNumber}: ${editUnitTitle.trim()}`,
+                }
+              : undefined,
+          };
+        }
+        return u;
+      })
+    );
+
+    setShowEditUnitModal(false);
+    setEditingUnitId(null);
+  };
+
+  // Delete Unit
+  const handleDeleteUnit = (unitId: string, unitTitle: string) => {
+    if (curriculum.length <= 1) {
+      alert('ระบบต้องมีหน่วยการเรียนรู้อย่างน้อย 1 หน่วย');
+      return;
+    }
+
+    if (
+      confirm(
+        `คุณต้องการลบหน่วยการเรียนรู้ "${unitTitle}" พร้อมบทเรียนย่อยและแบบทดสอบทั้งหมดหรือไม่?\n(การดำเนินการนี้ไม่สามารถเรียกคืนได้)`
+      )
+    ) {
+      const remaining = curriculum.filter((u) => u.id !== unitId);
+      const renumbered = remaining.map((u, idx) => ({
+        ...u,
+        unitNumber: idx + 1,
+        lessons: u.lessons.map((ls, lIdx) => ({
+          ...ls,
+          numberStr: `${idx + 1}.${lIdx + 1}`,
+        })),
+      }));
+
+      setCurriculum(renumbered);
+
+      if (selectedUnitId === unitId && renumbered.length > 0) {
+        setSelectedUnitId(renumbered[0].id);
+        if (renumbered[0].lessons.length > 0) {
+          setSelectedLessonId(renumbered[0].lessons[0].id);
+          setLessonTitle(renumbered[0].lessons[0].title);
+          setLessonDesc(renumbered[0].lessons[0].description || '');
+          setLessonVideoUrl(renumbered[0].lessons[0].videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+        }
+      }
+    }
+  };
+
+  // Add Sub-Lesson
+  const handleSaveAddSubLesson = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLessonTitle.trim()) return;
+
+    const nextIndex = (activeUnit.lessons?.length || 0) + 1;
+    const newLesson: SubLesson = {
+      id: 'l-' + Date.now(),
+      numberStr: `${activeUnit.unitNumber}.${nextIndex}`,
+      title: newLessonTitle.trim(),
+      status: 'พร้อมสอน',
+      duration: newLessonDuration.trim() || '20:00 นาที',
+      videoUrl: newLessonVideoUrl.trim() || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      description: 'เนื้อหาและกิจกรรมการเรียนรู้สำหรับบทเรียนนี้',
+    };
+
+    setCurriculum((prev) =>
+      prev.map((u) => {
+        if (u.id === activeUnit.id) {
+          return {
+            ...u,
+            lessonsCount: (u.lessons?.length || 0) + 1,
+            lessons: [...(u.lessons || []), newLesson],
+          };
+        }
+        return u;
+      })
+    );
+
+    setSelectedLessonId(newLesson.id);
+    setLessonTitle(newLesson.title);
+    setLessonDesc(newLesson.description);
+    setLessonVideoUrl(newLesson.videoUrl);
+    setShowAddLessonModal(false);
+    setNewLessonTitle('');
+  };
+
+  // Delete Sub-Lesson
+  const handleDeleteSubLesson = (unitId: string, lessonId: string, lessonTitleStr: string) => {
+    const targetUnit = curriculum.find((u) => u.id === unitId);
+    if (!targetUnit || targetUnit.lessons.length <= 1) {
+      alert('แต่ละหน่วยการเรียนรู้ต้องมีบทเรียนย่อยอย่างน้อย 1 บทเรียน');
+      return;
+    }
+
+    if (confirm(`คุณต้องการลบบทเรียนย่อย "${lessonTitleStr}" หรือไม่?`)) {
+      setCurriculum((prev) =>
+        prev.map((u) => {
+          if (u.id === unitId) {
+            const filtered = u.lessons.filter((l) => l.id !== lessonId);
+            return {
+              ...u,
+              lessonsCount: filtered.length,
+              lessons: filtered.map((l, idx) => ({
+                ...l,
+                numberStr: `${u.unitNumber}.${idx + 1}`,
+              })),
+            };
+          }
+          return u;
+        })
+      );
+
+      if (selectedLessonId === lessonId) {
+        const remainingLessons = targetUnit.lessons.filter((l) => l.id !== lessonId);
+        if (remainingLessons.length > 0) {
+          setSelectedLessonId(remainingLessons[0].id);
+          setLessonTitle(remainingLessons[0].title);
+          setLessonDesc(remainingLessons[0].description || '');
+          setLessonVideoUrl(remainingLessons[0].videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+        }
+      }
+    }
   };
 
   // Add new grade level
@@ -486,47 +661,126 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                               setSelectedLessonId(u.lessons[0].id);
                               setLessonTitle(u.lessons[0].title);
                               setLessonDesc(u.lessons[0].description || '');
+                              setLessonVideoUrl(u.lessons[0].videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
                             }
                           }}
-                          className="flex items-center gap-2 text-left flex-1"
+                          className="flex items-center gap-2.5 text-left flex-1 min-w-0"
                         >
                           <span
-                            className={`w-6 h-6 rounded-md text-xs font-bold flex items-center justify-center ${
+                            className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 shadow-2xs ${
                               isUSelected ? 'bg-[#00173b] text-white' : 'bg-[#e6eeff] text-[#00173b]'
                             }`}
                           >
                             {u.unitNumber}
                           </span>
-                          <div>
-                            <div className="font-semibold text-xs text-[#00173b] line-clamp-1">{u.title}</div>
-                            <div className="text-[10px] text-[#747780]">{u.lessons.length} บทเรียนย่อย</div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-xs text-[#00173b] truncate" title={u.title}>
+                              {u.title}
+                            </div>
+                            <div className="text-[11px] text-[#747780] truncate">
+                              {u.subtitle || `${u.lessons.length} บทเรียนย่อย`}
+                            </div>
                           </div>
                         </button>
+
+                        {/* Unit Management Buttons (Edit & Delete) */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditUnit(u);
+                            }}
+                            className="p-1 rounded-md text-[#00173b] hover:bg-[#dce9ff] transition-colors"
+                            title="แก้ไขข้อมูลหน่วยการเรียนรู้นี้"
+                            id={`btn-edit-unit-${u.id}`}
+                          >
+                            <span className="material-symbols-outlined text-[17px]">edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteUnit(u.id, u.title);
+                            }}
+                            className="p-1 rounded-md text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors"
+                            title="ลบหน่วยการเรียนรู้นี้"
+                            id={`btn-delete-unit-${u.id}`}
+                          >
+                            <span className="material-symbols-outlined text-[17px]">delete</span>
+                          </button>
+                        </div>
                       </div>
 
                       {/* Sub-lessons */}
                       {isUSelected && (
-                        <div className="mt-2.5 pt-2 border-t border-[#dce9ff] flex flex-col gap-1">
+                        <div className="mt-2.5 pt-2.5 border-t border-[#dce9ff] flex flex-col gap-1.5">
+                          <div className="flex items-center justify-between text-[11px] font-semibold text-[#44474f] px-1">
+                            <span>บทเรียนย่อยในหน่วยนี้ ({u.lessons.length})</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewLessonTitle(`บทเรียนที่ ${u.unitNumber}.${u.lessons.length + 1}`);
+                                setShowAddLessonModal(true);
+                              }}
+                              className="text-[#bb0112] hover:text-[#93000b] hover:underline flex items-center gap-0.5"
+                              id="btn-add-sublesson"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">add_circle</span>
+                              <span>เพิ่มบทเรียนย่อย</span>
+                            </button>
+                          </div>
+
                           {u.lessons.map((ls) => {
                             const isLsActive = ls.id === selectedLessonId;
                             return (
-                              <button
+                              <div
                                 key={ls.id}
-                                onClick={() => {
-                                  setSelectedLessonId(ls.id);
-                                  setLessonTitle(ls.title);
-                                  setLessonDesc(ls.description || '');
-                                  setLessonVideoUrl(ls.videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
-                                }}
-                                className={`p-2 rounded-lg text-left text-xs flex items-center justify-between transition-all ${
+                                className={`p-1.5 rounded-lg text-xs flex items-center justify-between gap-1 transition-all ${
                                   isLsActive
                                     ? 'bg-[#00173b] text-white font-semibold'
-                                    : 'hover:bg-white text-[#44474f]'
+                                    : 'hover:bg-white text-[#44474f] bg-[#f8f9ff]/60 border border-[#e6eeff]'
                                 }`}
                               >
-                                <span className="truncate">{ls.numberStr} {ls.title}</span>
-                                <span className="text-[10px] px-1 rounded bg-white/20">{ls.status}</span>
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedLessonId(ls.id);
+                                    setLessonTitle(ls.title);
+                                    setLessonDesc(ls.description || '');
+                                    setLessonVideoUrl(ls.videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+                                  }}
+                                  className="flex items-center gap-1.5 flex-1 text-left min-w-0"
+                                >
+                                  <span className="material-symbols-outlined text-[15px] opacity-80 shrink-0">
+                                    play_circle
+                                  </span>
+                                  <span className="truncate">{ls.numberStr} {ls.title}</span>
+                                </button>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                    isLsActive ? 'bg-white/20 text-white' : 'bg-[#e6eeff] text-[#00173b]'
+                                  }`}>
+                                    {ls.duration || '15 นาที'}
+                                  </span>
+                                  {u.lessons.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteSubLesson(u.id, ls.id, ls.title);
+                                      }}
+                                      className={`p-0.5 rounded hover:bg-red-500 hover:text-white transition-colors ${
+                                        isLsActive ? 'text-red-200' : 'text-gray-400'
+                                      }`}
+                                      title="ลบบทเรียนย่อยนี้"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">delete</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
                             );
                           })}
                         </div>
@@ -539,6 +793,49 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
 
             {/* Right Column: Lesson Editor & Unit Quiz Builder */}
             <div className="lg:col-span-8 flex flex-col gap-6">
+              
+              {/* Unit Info Banner with Quick Edit & Delete */}
+              <div className="bg-gradient-to-r from-[#00173b] to-[#0f2c59] text-white rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center font-black text-lg border border-white/20">
+                    {activeUnit.unitNumber}
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-white/70 uppercase tracking-wider font-semibold">
+                      หน่วยการเรียนรู้ที่กำลังจัดการ
+                    </div>
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                      {activeUnit.title}
+                    </h2>
+                    {activeUnit.subtitle && (
+                      <p className="text-xs text-white/80 line-clamp-1">{activeUnit.subtitle}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditUnit(activeUnit)}
+                    className="px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-semibold flex items-center gap-1 transition-all border border-white/25"
+                    id="btn-quick-edit-active-unit"
+                    title="แก้ไขชื่อและรายละเอียดหน่วยการเรียนรู้นี้"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">edit</span>
+                    <span>แก้ไขหน่วยนี้</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteUnit(activeUnit.id, activeUnit.title)}
+                    className="px-3 py-1.5 rounded-lg bg-red-600/80 hover:bg-red-600 text-white text-xs font-semibold flex items-center gap-1 transition-all border border-red-400/40"
+                    id="btn-quick-delete-active-unit"
+                    title="ลบหน่วยการเรียนรู้นี้"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                    <span>ลบหน่วยนี้</span>
+                  </button>
+                </div>
+              </div>
               
               {/* Card 1: Lesson Editor */}
               <div className="bg-white rounded-xl shadow-sm border border-[#e6eeff] p-6 flex flex-col gap-4">
@@ -1287,24 +1584,40 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
               </div>
 
               <form onSubmit={handleCreateUnit} className="space-y-3">
-                <div>
-                  <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-unit-title">
-                    ชื่อหน่วยการเรียนรู้ *
-                  </label>
-                  <input
-                    id="modal-unit-title"
-                    type="text"
-                    value={newUnitTitle}
-                    onChange={(e) => setNewUnitTitle(e.target.value)}
-                    placeholder="เช่น ปัญญาประดิษฐ์และวิทยาศาสตร์ข้อมูล"
-                    className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none"
-                    required
-                  />
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-unit-num">
+                      ลำดับหน่วย *
+                    </label>
+                    <input
+                      id="modal-unit-num"
+                      type="number"
+                      min={1}
+                      value={newUnitNumber}
+                      onChange={(e) => setNewUnitNumber(Number(e.target.value))}
+                      className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none font-bold text-center"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-unit-title">
+                      ชื่อหน่วยการเรียนรู้ *
+                    </label>
+                    <input
+                      id="modal-unit-title"
+                      type="text"
+                      value={newUnitTitle}
+                      onChange={(e) => setNewUnitTitle(e.target.value)}
+                      placeholder="เช่น วิทยาศาสตร์ข้อมูลและ AI"
+                      className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none"
+                      required
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-unit-subtitle">
-                    คำอธิบายสาระสำคัญย่อ
+                    คำอธิบายสาระสำคัญย่อ (Subtitle)
                   </label>
                   <input
                     id="modal-unit-subtitle"
@@ -1316,7 +1629,21 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                   />
                 </div>
 
-                <div className="flex justify-end gap-2 pt-2">
+                <div>
+                  <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-unit-first-lesson">
+                    ชื่อบทเรียนแรกในหน่วยนี้
+                  </label>
+                  <input
+                    id="modal-unit-first-lesson"
+                    type="text"
+                    value={newUnitFirstLessonTitle}
+                    onChange={(e) => setNewUnitFirstLessonTitle(e.target.value)}
+                    placeholder="เช่น บทนำและภาพรวมเนื้อหา"
+                    className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3">
                   <button
                     type="button"
                     onClick={() => setShowNewUnitModal(false)}
@@ -1326,9 +1653,169 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-lg bg-[#bb0112] text-white text-xs font-bold hover:bg-[#93000b]"
+                    className="px-4 py-2 rounded-lg bg-[#bb0112] text-white text-xs font-bold hover:bg-[#93000b] flex items-center gap-1 shadow-sm"
                   >
-                    สร้างหน่วยการเรียนรู้
+                    <span className="material-symbols-outlined text-[16px]">check</span>
+                    <span>สร้างหน่วยการเรียนรู้</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 4: EDIT UNIT (แก้ไขข้อมูลหน่วยการเรียนรู้) */}
+        {showEditUnitModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border-t-4 border-[#00173b] space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-base text-[#00173b] flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#00173b]">edit_note</span>
+                  <span>แก้ไขข้อมูลหน่วยการเรียนรู้</span>
+                </h3>
+                <button onClick={() => setShowEditUnitModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditUnit} className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-edit-unit-num">
+                      ลำดับหน่วย *
+                    </label>
+                    <input
+                      id="modal-edit-unit-num"
+                      type="number"
+                      min={1}
+                      value={editUnitNumber}
+                      onChange={(e) => setEditUnitNumber(Number(e.target.value))}
+                      className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none font-bold text-center"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-edit-unit-title">
+                      ชื่อหน่วยการเรียนรู้ *
+                    </label>
+                    <input
+                      id="modal-edit-unit-title"
+                      type="text"
+                      value={editUnitTitle}
+                      onChange={(e) => setEditUnitTitle(e.target.value)}
+                      className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none font-semibold"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-edit-unit-subtitle">
+                    คำอธิบายสาระสำคัญย่อ (Subtitle)
+                  </label>
+                  <input
+                    id="modal-edit-unit-subtitle"
+                    type="text"
+                    value={editUnitSubtitle}
+                    onChange={(e) => setEditUnitSubtitle(e.target.value)}
+                    placeholder="เช่น การประยุกต์ใช้โมเดล AI ในชีวิตประจำวัน"
+                    className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditUnitModal(false)}
+                    className="px-4 py-2 rounded-lg text-xs font-semibold text-[#44474f] hover:bg-gray-100"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-lg bg-[#00173b] text-white text-xs font-bold hover:bg-[#0f2c59] flex items-center gap-1 shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">save</span>
+                    <span>บันทึกการแก้ไข</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 5: ADD SUB-LESSON (เพิ่มบทเรียนย่อย) */}
+        {showAddLessonModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border-t-4 border-[#00173b] space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-base text-[#00173b] flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#00173b]">playlist_add</span>
+                  <span>เพิ่มบทเรียนย่อยในหน่วยที่ {activeUnit.unitNumber}</span>
+                </h3>
+                <button onClick={() => setShowAddLessonModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveAddSubLesson} className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-lesson-title">
+                    ชื่อบทเรียนย่อย *
+                  </label>
+                  <input
+                    id="modal-lesson-title"
+                    type="text"
+                    value={newLessonTitle}
+                    onChange={(e) => setNewLessonTitle(e.target.value)}
+                    placeholder="เช่น 1.2 โครงสร้างและหลักการทำงานของ AI"
+                    className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-lesson-duration">
+                    ความยาว / ระยะเวลา
+                  </label>
+                  <input
+                    id="modal-lesson-duration"
+                    type="text"
+                    value={newLessonDuration}
+                    onChange={(e) => setNewLessonDuration(e.target.value)}
+                    placeholder="เช่น 20:00 นาที"
+                    className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-[#0d1c2e]" htmlFor="modal-lesson-video">
+                    ลิงก์วิดีโอ YouTube
+                  </label>
+                  <input
+                    id="modal-lesson-video"
+                    type="url"
+                    value={newLessonVideoUrl}
+                    onChange={(e) => setNewLessonVideoUrl(e.target.value)}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    className="w-full px-3 py-2 mt-1 rounded-lg bg-[#eff4ff] text-xs text-[#0d1c2e] focus:bg-white focus:ring-2 focus:ring-[#00173b] outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddLessonModal(false)}
+                    className="px-4 py-2 rounded-lg text-xs font-semibold text-[#44474f] hover:bg-gray-100"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-lg bg-[#00173b] text-white text-xs font-bold hover:bg-[#0f2c59] flex items-center gap-1 shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">add</span>
+                    <span>เพิ่มบทเรียน</span>
                   </button>
                 </div>
               </form>
