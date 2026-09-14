@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AVATAR_URL, VIDEO_THUMB_URL } from '../data/initialData';
-import { Student, CurriculumUnit } from '../types';
+import { Student, CurriculumUnit, SubLesson } from '../types';
 
 interface ClassroomScreenProps {
   currentUser: Student | null;
@@ -31,9 +31,30 @@ export const ClassroomScreen: React.FC<ClassroomScreenProps> = ({
   const [submissionTime, setSubmissionTime] = useState('');
   const [quizError, setQuizError] = useState<string | null>(null);
 
-  const activeUnit = curriculum.find((u) => u.id === selectedUnitId) || curriculum[1];
-  const activeLesson =
-    activeUnit.lessons.find((l) => l.id === selectedLessonId) || activeUnit.lessons[0];
+  const fallbackLesson: SubLesson = {
+    id: 'empty_lesson',
+    numberStr: '1.1',
+    title: 'ยังไม่มีบทเรียนในหน่วยนี้',
+    status: 'ร่าง',
+    duration: '00:00 นาที',
+    description: 'ครูผู้สอนยังไม่ได้เพิ่มบทเรียนในหน่วยนี้ หรือข้อมูลกำลังอยู่ระหว่างการปรับปรุง',
+  };
+
+  const activeUnit: CurriculumUnit =
+    curriculum.find((u) => u.id === selectedUnitId) ||
+    curriculum[0] || {
+      id: 'empty',
+      unitNumber: 1,
+      title: 'ไม่มีบทเรียน',
+      subtitle: '',
+      lessonsCount: 0,
+      lessons: [],
+    };
+
+  const activeLesson: SubLesson =
+    activeUnit?.lessons?.find((l) => l.id === selectedLessonId) ||
+    activeUnit?.lessons?.[0] ||
+    fallbackLesson;
 
   const handleSelectAnswer = (questionId: string, optionIndex: number) => {
     if (quizSubmitted) return;

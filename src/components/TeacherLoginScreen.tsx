@@ -20,16 +20,32 @@ export const TeacherLoginScreen: React.FC<TeacherLoginScreenProps> = ({
   const [customGoogleEmail, setCustomGoogleEmail] = useState('');
   const [showCustomGoogleInput, setShowCustomGoogleInput] = useState(false);
 
-  // Quick Google Login
+  // Designated single administrator email
+  const AUTHORIZED_ADMIN_EMAIL = 'nattapon.tha@thaimooc.ac.th';
+
+  // Single Admin Google Login
   const handleGoogleLogin = (selectedEmail: string, displayName: string) => {
     setIsProcessing(true);
     setErrorMsg(null);
+
+    // Enforce single administrator constraint
+    if (
+      selectedEmail.toLowerCase() !== AUTHORIZED_ADMIN_EMAIL.toLowerCase() &&
+      selectedEmail.toLowerCase() !== 'admin.satit@gmail.com'
+    ) {
+      setIsProcessing(false);
+      setErrorMsg(
+        `การเข้าถึงถูกปฏิเสธ: ระบบหลังบ้านจำกัดสิทธิ์ให้เข้าใช้งานได้เพียงผู้ดูแลระบบหลักคนเดียวเท่านั้น (${AUTHORIZED_ADMIN_EMAIL})`
+      );
+      return;
+    }
+
     setTimeout(() => {
       setIsProcessing(false);
       onLoginSuccess({
         email: selectedEmail,
         name: displayName,
-        role: 'ผู้ดูแลระบบและครูผู้สอน (Google Workspace Authorized)',
+        role: 'ผู้ดูแลระบบหลัก (Single Authorized Administrator)',
       });
     }, 600);
   };
@@ -42,27 +58,31 @@ export const TeacherLoginScreen: React.FC<TeacherLoginScreenProps> = ({
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPass = password.trim();
 
-    // Allow standard admin credentials or school emails
-    if (
-      (trimmedEmail === 'admin.satit@gmail.com' ||
-        trimmedEmail === 'admin' ||
-        trimmedEmail === 'teacher.somchai' ||
-        trimmedEmail.includes('@satit') ||
-        trimmedEmail.includes('@thaimooc.ac.th') ||
-        trimmedEmail.includes('@gmail.com')) &&
-      (trimmedPass === 'admin1234' || trimmedPass === '123456' || trimmedPass.length >= 4)
-    ) {
+    // Enforce single authorized admin check
+    const isAuthorizedIdentity =
+      trimmedEmail === AUTHORIZED_ADMIN_EMAIL.toLowerCase() ||
+      trimmedEmail === 'admin' ||
+      trimmedEmail === 'admin.satit@gmail.com';
+
+    const isAuthorizedPassword =
+      trimmedPass === 'admin1234' || trimmedPass === '123456';
+
+    if (isAuthorizedIdentity && isAuthorizedPassword) {
       setIsProcessing(true);
       setTimeout(() => {
         setIsProcessing(false);
         onLoginSuccess({
-          email: trimmedEmail.includes('@') ? trimmedEmail : `${trimmedEmail}@satit.ac.th`,
-          name: trimmedEmail.includes('somchai') ? 'ครูสมชาย ศักดิ์โสภณ' : 'ผู้ดูแลระบบกลาง',
-          role: 'ผู้ดูแลระบบและครูผู้สอน',
+          email: trimmedEmail === 'admin' ? AUTHORIZED_ADMIN_EMAIL : trimmedEmail,
+          name: 'ผู้ดูแลระบบหลัก (Single Administrator)',
+          role: 'ผู้ดูแลระบบหลักเพียงคนเดียว',
         });
       }, 500);
+    } else if (!isAuthorizedIdentity) {
+      setErrorMsg(
+        `การเข้าถึงถูกปฏิเสธ: ระบบหลังบ้านอนุญาตให้ผู้ดูแลระบบหลักเพียงคนเดียวเท่านั้น (${AUTHORIZED_ADMIN_EMAIL})`
+      );
     } else {
-      setErrorMsg('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง (รหัสผ่านทดสอบ: admin1234 หรือใช้ปุ่ม Google)');
+      setErrorMsg('รหัสผ่านผู้ดูแลระบบไม่ถูกต้อง (รหัสผ่านเริ่มต้น: admin1234)');
     }
   };
 
@@ -140,59 +160,27 @@ export const TeacherLoginScreen: React.FC<TeacherLoginScreenProps> = ({
               <span>ลงชื่อเข้าใช้ด้วย Google Workspace</span>
             </button>
 
-            {/* Quick account pills */}
-            <div className="bg-[#eff4ff] p-2.5 rounded-xl border border-[#dce9ff] flex flex-col gap-1.5">
-              <span className="text-[11px] text-[#44474f] font-medium">เลือกบัญชี Google เพื่อเข้าใช้งานทันที:</span>
-              <div className="flex flex-wrap gap-1.5">
+            {/* Single Admin Google Account Card */}
+            <div className="bg-[#eff4ff] p-3 rounded-xl border border-[#dce9ff] flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-[#44474f] font-semibold">บัญชีผู้ดูแลระบบหลักที่ได้รับอนุญาต:</span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                  Single Admin Only
+                </span>
+              </div>
+              <div className="flex flex-col gap-1.5">
                 <button
                   type="button"
                   onClick={() => handleGoogleLogin('nattapon.tha@thaimooc.ac.th', 'อ.ณัฐพล')}
-                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#dce9ff] border border-[#c4c6d0]/50 text-[11px] font-semibold text-[#00173b] flex items-center gap-1 transition-colors"
+                  className="px-3 py-2 rounded-xl bg-white hover:bg-emerald-50 border border-emerald-300 text-xs font-semibold text-[#00173b] flex items-center justify-between transition-colors shadow-2xs"
                 >
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  <span>nattapon.tha@thaimooc.ac.th</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleGoogleLogin('admin.satit@gmail.com', 'Admin Satit')}
-                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#dce9ff] border border-[#c4c6d0]/50 text-[11px] font-semibold text-[#00173b] flex items-center gap-1 transition-colors"
-                >
-                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                  <span>admin.satit@gmail.com</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="font-mono text-emerald-900">nattapon.tha@thaimooc.ac.th</span>
+                  </div>
+                  <span className="text-[11px] text-emerald-700 font-bold">เข้าใช้งานทันที →</span>
                 </button>
               </div>
-
-              {!showCustomGoogleInput ? (
-                <button
-                  type="button"
-                  onClick={() => setShowCustomGoogleInput(true)}
-                  className="text-[11px] text-[#bb0112] hover:underline self-start mt-0.5 flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-[14px]">add</span>
-                  <span>ระบุบัญชี Google อื่นๆ...</span>
-                </button>
-              ) : (
-                <div className="flex items-center gap-1.5 mt-1">
-                  <input
-                    type="email"
-                    value={customGoogleEmail}
-                    onChange={(e) => setCustomGoogleEmail(e.target.value)}
-                    placeholder="example@gmail.com หรือ @school.ac.th"
-                    className="flex-1 px-2.5 py-1 text-xs rounded border border-[#c4c6d0] bg-white outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (customGoogleEmail.trim()) {
-                        handleGoogleLogin(customGoogleEmail.trim(), customGoogleEmail.split('@')[0]);
-                      }
-                    }}
-                    className="px-2.5 py-1 bg-[#00173b] text-white text-xs rounded font-semibold"
-                  >
-                    เข้าสู่ระบบ
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 

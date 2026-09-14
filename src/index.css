@@ -145,3 +145,19 @@
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .no-print, header, nav, #universal-nav {
+    display: none !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 1.2cm;
+  }
+}

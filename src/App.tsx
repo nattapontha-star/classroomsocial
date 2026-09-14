@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Navigation } from './components/Navigation';
 import { PortalAuthScreen } from './components/PortalAuthScreen';
 import { ScorePortalScreen } from './components/ScorePortalScreen';
@@ -6,26 +6,155 @@ import { ClassroomScreen } from './components/ClassroomScreen';
 import { AdminPortalScreen } from './components/AdminPortalScreen';
 import { TeacherLoginScreen } from './components/TeacherLoginScreen';
 import {
-  initialStudents,
-  initialScores,
-  initialCurriculum,
-  initialGradeLevels,
-} from './data/initialData';
-import { Student, StudentScore, CurriculumUnit, GradeLevel } from './types';
+  getMasterData,
+  saveMasterData,
+  deleteStudentFromStorage,
+  resetToFactoryDefaults,
+  getSavedAdminSession,
+  saveAdminSession,
+  DATA_SYNC_EVENT,
+  PersistedData,
+  fetchFromFirestore,
+  subscribeToFirestore,
+} from './services/storageService';
+import { initialScores } from './data/initialData';
+import { Student, StudentScore, CurriculumUnit, GradeLevel, ContactInfo } from './types';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'home' | 'scores' | 'classroom' | 'admin'>('home');
-  const [currentUser, setCurrentUser] = useState<Student | null>(initialStudents[0]);
-  const [students, setStudents] = useState<Student[]>(initialStudents);
-  const [scores, setScores] = useState<StudentScore[]>(initialScores);
-  const [curriculum, setCurriculum] = useState<CurriculumUnit[]>(initialCurriculum);
-  const [gradeLevels, setGradeLevels] = useState<GradeLevel[]>(initialGradeLevels);
-  const [schoolName, setSchoolName] = useState('โรงเรียนสาธิตเทศบาลเมืองราชบุรี');
-  const [systemTitle, setSystemTitle] = useState('ระบบบริหารจัดการวิชาการและบทเรียน');
 
-  // Teacher / Admin Authentication State
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [adminUser, setAdminUser] = useState<{ email: string; name: string; role: string } | null>(null);
+  // Master Persistent State - Initialized safely from storageService
+  const [masterState, setMasterState] = useState<PersistedData>(() => getMasterData());
+  const [currentUser, setCurrentUser] = useState<Student | null>(() => masterState.students[0] || null);
+
+  // Teacher / Admin Session State
+  const [adminUser, setAdminUser] = useState<{ email: string; name: string; role: string } | null>(() =>
+    getSavedAdminSession()
+  );
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => !!getSavedAdminSession());
+
+  const curriculum = masterState.curriculum;
+  const students = masterState.students;
+  const scores = masterState.scores;
+  const gradeLevels = masterState.gradeLevels;
+  const schoolName = masterState.schoolName;
+  const systemTitle = masterState.systemTitle;
+  const contactInfo = masterState.contactInfo;
+
+  // Real-time Storage & Firestore Cloud Synchronization
+  useEffect(() => {
+    // 1. Listen for local and cross-tab storage changes
+    const handleSync = (e: Event) => {
+      const customEvent = e as CustomEvent<{ data?: PersistedData }>;
+      const data: PersistedData = customEvent.detail?.data || getMasterData();
+      if (data) {
+        setMasterState(data);
+      }
+    };
+
+    window.addEventListener(DATA_SYNC_EVENT, handleSync);
+    window.addEventListener('storage', handleSync);
+
+    // 2. Fetch live data from Firestore directly on app mount
+    fetchFromFirestore().then((cloudData) => {
+      if (cloudData) {
+        setMasterState(cloudData);
+      }
+    });
+
+    // 3. Subscribe to real-time updates from Firebase Firestore
+    const unsubscribeFirestore = subscribeToFirestore((cloudData) => {
+      if (cloudData) {
+        setMasterState(cloudData);
+      }
+    });
+
+    return () => {
+      window.removeEventListener(DATA_SYNC_EVENT, handleSync);
+      window.removeEventListener('storage', handleSync);
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+    };
+  }, []);
+
+  // Synchronous, permanent state dispatchers
+  const setCurriculum = useCallback(
+    (action: CurriculumUnit[] | ((prev: CurriculumUnit[]) => CurriculumUnit[])) => {
+      setMasterState((prev) => {
+        const nextVal = typeof action === 'function' ? action(prev.curriculum) : action;
+        saveMasterData({ curriculum: nextVal });
+        return { ...prev, curriculum: nextVal };
+      });
+    },
+    []
+  );
+
+  const setStudents = useCallback(
+    (action: Student[] | ((prev: Student[]) => Student[])) => {
+      setMasterState((prev) => {
+        const nextVal = typeof action === 'function' ? action(prev.students) : action;
+        saveMasterData({ students: nextVal });
+        return { ...prev, students: nextVal };
+      });
+    },
+    []
+  );
+
+  const setScores = useCallback(
+    (action: StudentScore[] | ((prev: StudentScore[]) => StudentScore[])) => {
+      setMasterState((prev) => {
+        const nextVal = typeof action === 'function' ? action(prev.scores) : action;
+        saveMasterData({ scores: nextVal });
+        return { ...prev, scores: nextVal };
+      });
+    },
+    []
+  );
+
+  const setGradeLevels = useCallback(
+    (action: GradeLevel[] | ((prev: GradeLevel[]) => GradeLevel[])) => {
+      setMasterState((prev) => {
+        const nextVal = typeof action === 'function' ? action(prev.gradeLevels) : action;
+        saveMasterData({ gradeLevels: nextVal });
+        return { ...prev, gradeLevels: nextVal };
+      });
+    },
+    []
+  );
+
+  const setSchoolName = useCallback(
+    (action: string | ((prev: string) => string)) => {
+      setMasterState((prev) => {
+        const nextVal = typeof action === 'function' ? action(prev.schoolName) : action;
+        saveMasterData({ schoolName: nextVal });
+        return { ...prev, schoolName: nextVal };
+      });
+    },
+    []
+  );
+
+  const setSystemTitle = useCallback(
+    (action: string | ((prev: string) => string)) => {
+      setMasterState((prev) => {
+        const nextVal = typeof action === 'function' ? action(prev.systemTitle) : action;
+        saveMasterData({ systemTitle: nextVal });
+        return { ...prev, systemTitle: nextVal };
+      });
+    },
+    []
+  );
+
+  const setContactInfo = useCallback(
+    (action: ContactInfo | ((prev: ContactInfo) => ContactInfo)) => {
+      setMasterState((prev) => {
+        const nextVal = typeof action === 'function' ? action(prev.contactInfo) : action;
+        saveMasterData({ contactInfo: nextVal });
+        return { ...prev, contactInfo: nextVal };
+      });
+    },
+    []
+  );
 
   const handleLoginSuccess = (student: Student) => {
     setCurrentUser(student);
@@ -33,12 +162,13 @@ export default function App() {
   };
 
   const handleRegisterStudent = (newStudent: Student): boolean => {
+    // Add student
     setStudents((prev) => [newStudent, ...prev]);
 
     // Also add an entry into scores
     const newScoreRecord: StudentScore = {
-      studentId: newStudent.studentId,
       studentNo: newStudent.number,
+      studentId: newStudent.studentId,
       firstName: newStudent.firstName,
       lastName: newStudent.lastName,
       classRoom: newStudent.classRoom,
@@ -55,21 +185,53 @@ export default function App() {
     return true;
   };
 
+  const handleDeleteStudentAtomic = useCallback((studentId: string) => {
+    const updated = deleteStudentFromStorage(studentId);
+    setMasterState((prev) => ({
+      ...prev,
+      students: updated.students,
+      scores: updated.scores,
+    }));
+  }, []);
+
   const handleLogout = () => {
     setCurrentUser(null);
     setCurrentScreen('home');
   };
 
+  /**
+   * Teacher / Admin Authentication
+   * Admin login preserves the active master school database so deleted units & students never resurrect!
+   */
   const handleAdminLoginSuccess = (info: { email: string; name: string; role: string }) => {
     setAdminUser(info);
     setIsAdminLoggedIn(true);
+    saveAdminSession(info);
     setCurrentScreen('admin');
   };
 
   const handleAdminLogout = () => {
     setIsAdminLoggedIn(false);
     setAdminUser(null);
+    saveAdminSession(null);
     setCurrentScreen('home');
+  };
+
+  // Restore default scores handler for ScorePortal
+  const handleResetDefaultScores = () => {
+    setScores(initialScores);
+  };
+
+  // Explicit Factory Reset
+  const handleResetCurrentAdminData = () => {
+    if (
+      window.confirm(
+        'คุณต้องการคืนค่าระบบเป็นค่าเริ่มต้นทั้งหมดหรือไม่?\n\n- ข้อมูลหน่วยการเรียนรู้, นักเรียน, คะแนน, ระดับชั้น, และข้อมูลติดต่อจะถูกรีเซ็ตกลับเป็นค่าเริ่มต้นมาตรฐานโรงเรียน'
+      )
+    ) {
+      const resetData = resetToFactoryDefaults();
+      setMasterState(resetData);
+    }
   };
 
   return (
@@ -95,12 +257,15 @@ export default function App() {
             onRegisterStudent={handleRegisterStudent}
             onNavigateScores={() => setCurrentScreen('scores')}
             schoolName={schoolName}
+            contactInfo={contactInfo}
           />
         )}
 
         {currentScreen === 'scores' && (
           <ScorePortalScreen
             scores={scores}
+            setScores={setScores}
+            onResetScores={handleResetDefaultScores}
             onNavigateHome={() => setCurrentScreen('home')}
             onNavigateClassroom={() => setCurrentScreen('classroom')}
             onNavigateAdmin={() => setCurrentScreen('admin')}
@@ -119,8 +284,8 @@ export default function App() {
           />
         )}
 
-        {currentScreen === 'admin' && (
-          !isAdminLoggedIn ? (
+        {currentScreen === 'admin' &&
+          (!isAdminLoggedIn ? (
             <TeacherLoginScreen
               onLoginSuccess={handleAdminLoginSuccess}
               onCancel={() => setCurrentScreen('home')}
@@ -143,9 +308,12 @@ export default function App() {
               onNavigateHome={() => setCurrentScreen('home')}
               adminUser={adminUser}
               onLogoutAdmin={handleAdminLogout}
+              onResetAccountData={handleResetCurrentAdminData}
+              contactInfo={contactInfo}
+              setContactInfo={setContactInfo}
+              onDeleteStudent={handleDeleteStudentAtomic}
             />
-          )
-        )}
+          ))}
       </main>
     </div>
   );

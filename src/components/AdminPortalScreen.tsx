@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
-import { SCHOOL_LOGO_URL, VIDEO_THUMB_URL } from '../data/initialData';
-import { Student, StudentScore, CurriculumUnit, GradeLevel, SubLesson } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { SCHOOL_LOGO_URL, VIDEO_THUMB_URL, initialContactInfo } from '../data/initialData';
+import { Student, StudentScore, CurriculumUnit, GradeLevel, SubLesson, ContactInfo } from '../types';
+import { EditContactModal } from './EditContactModal';
+import { ConfirmDialogModal, ConfirmDialogState } from './ConfirmDialogModal';
+import { ReportCardModal } from './ReportCardModal';
+import { EditScoreModal } from './EditScoreModal';
+import { downloadElementAsPdf } from '../utils/pdfExport';
 
 interface AdminPortalScreenProps {
   curriculum: CurriculumUnit[];
@@ -18,6 +23,10 @@ interface AdminPortalScreenProps {
   onNavigateHome: () => void;
   adminUser?: { email: string; name: string; role: string } | null;
   onLogoutAdmin: () => void;
+  onResetAccountData?: () => void;
+  contactInfo?: ContactInfo;
+  setContactInfo?: (contact: ContactInfo) => void;
+  onDeleteStudent?: (studentId: string) => void;
 }
 
 export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
@@ -36,10 +45,28 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   onNavigateHome,
   adminUser,
   onLogoutAdmin,
+  onResetAccountData,
+  contactInfo = initialContactInfo,
+  setContactInfo,
+  onDeleteStudent,
 }) => {
   const [activeTab, setActiveTab] = useState<'content' | 'scores' | 'registry'>('content');
   const [selectedUnitId, setSelectedUnitId] = useState('u2');
   const [selectedLessonId, setSelectedLessonId] = useState('l2-1');
+
+  // Modals and notifications state
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [selectedScoreForReport, setSelectedScoreForReport] = useState<StudentScore | null>(null);
+  const [selectedScoreForEdit, setSelectedScoreForEdit] = useState<StudentScore | null>(null);
+
+  useEffect(() => {
+    if (toastMsg) {
+      const timer = setTimeout(() => setToastMsg(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMsg]);
 
   // Student password visibility states
   const [showPasswords, setShowPasswords] = useState<{ [key: string]: boolean }>({});
@@ -53,8 +80,27 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   };
 
   // Edit Lesson state
-  const activeUnit = curriculum.find((u) => u.id === selectedUnitId) || curriculum[0];
-  const activeLesson = activeUnit.lessons.find((l) => l.id === selectedLessonId) || activeUnit.lessons[0];
+  const fallbackLesson: SubLesson = {
+    id: 'temp_lesson',
+    numberStr: '1.1',
+    title: 'บทเรียนย่อย',
+    status: 'พร้อมสอน',
+    description: '',
+    videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  };
+
+  const activeUnit = curriculum.find((u) => u.id === selectedUnitId) || curriculum[0] || {
+    id: 'temp_unit',
+    unitNumber: 1,
+    title: 'หน่วยการเรียนรู้',
+    subtitle: '',
+    lessonsCount: 0,
+    lessons: [],
+  };
+  const activeLesson =
+    activeUnit?.lessons?.find((l) => l.id === selectedLessonId) ||
+    activeUnit?.lessons?.[0] ||
+    fallbackLesson;
 
   const [lessonTitle, setLessonTitle] = useState(activeLesson?.title || '');
   const [lessonVideoUrl, setLessonVideoUrl] = useState(activeLesson?.videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
@@ -76,6 +122,12 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const [showLevelsModal, setShowLevelsModal] = useState(false);
   const [newLevelName, setNewLevelName] = useState('');
   const [newLevelTrack, setNewLevelTrack] = useState('');
+
+  // Edit Grade Level State
+  const [editingLevelId, setEditingLevelId] = useState<string | null>(null);
+  const [editLevelName, setEditLevelName] = useState('');
+  const [editLevelTrack, setEditLevelTrack] = useState('');
+  const [editLevelCount, setEditLevelCount] = useState<number>(40);
 
   const [showNewUnitModal, setShowNewUnitModal] = useState(false);
   const [newUnitNumber, setNewUnitNumber] = useState<number>(curriculum.length + 1);
@@ -303,37 +355,48 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   // Delete Unit
   const handleDeleteUnit = (unitId: string, unitTitle: string) => {
     if (curriculum.length <= 1) {
-      alert('ระบบต้องมีหน่วยการเรียนรู้อย่างน้อย 1 หน่วย');
+      setConfirmDialog({
+        isOpen: true,
+        title: 'ไม่สามารถลบหน่วยการเรียนรู้ได้',
+        message: 'ระบบต้องมีหน่วยการเรียนรู้อย่างน้อย 1 หน่วยสำหรับจัดการเรียนการสอน',
+        confirmText: 'รับทราบ',
+        isDanger: false,
+        onConfirm: () => {},
+      });
       return;
     }
 
-    if (
-      confirm(
-        `คุณต้องการลบหน่วยการเรียนรู้ "${unitTitle}" พร้อมบทเรียนย่อยและแบบทดสอบทั้งหมดหรือไม่?\n(การดำเนินการนี้ไม่สามารถเรียกคืนได้)`
-      )
-    ) {
-      const remaining = curriculum.filter((u) => u.id !== unitId);
-      const renumbered = remaining.map((u, idx) => ({
-        ...u,
-        unitNumber: idx + 1,
-        lessons: u.lessons.map((ls, lIdx) => ({
-          ...ls,
-          numberStr: `${idx + 1}.${lIdx + 1}`,
-        })),
-      }));
+    setConfirmDialog({
+      isOpen: true,
+      title: 'ยืนยันการลบหน่วยการเรียนรู้',
+      message: `คุณต้องการลบหน่วยการเรียนรู้ "${unitTitle}" พร้อมบทเรียนย่อยและแบบทดสอบทั้งหมดหรือไม่?\n\n(การดำเนินการนี้จะลบข้อมูลออกจากระบบทันที)`,
+      confirmText: 'ลบหน่วยการเรียนรู้',
+      isDanger: true,
+      onConfirm: () => {
+        const remaining = curriculum.filter((u) => u.id !== unitId);
+        const renumbered = remaining.map((u, idx) => ({
+          ...u,
+          unitNumber: idx + 1,
+          lessons: u.lessons.map((ls, lIdx) => ({
+            ...ls,
+            numberStr: `${idx + 1}.${lIdx + 1}`,
+          })),
+        }));
 
-      setCurriculum(renumbered);
+        setCurriculum(renumbered);
 
-      if (selectedUnitId === unitId && renumbered.length > 0) {
-        setSelectedUnitId(renumbered[0].id);
-        if (renumbered[0].lessons.length > 0) {
-          setSelectedLessonId(renumbered[0].lessons[0].id);
-          setLessonTitle(renumbered[0].lessons[0].title);
-          setLessonDesc(renumbered[0].lessons[0].description || '');
-          setLessonVideoUrl(renumbered[0].lessons[0].videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+        if (selectedUnitId === unitId && renumbered.length > 0) {
+          setSelectedUnitId(renumbered[0].id);
+          if (renumbered[0].lessons.length > 0) {
+            setSelectedLessonId(renumbered[0].lessons[0].id);
+            setLessonTitle(renumbered[0].lessons[0].title);
+            setLessonDesc(renumbered[0].lessons[0].description || '');
+            setLessonVideoUrl(renumbered[0].lessons[0].videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+          }
         }
-      }
-    }
+        setToastMsg(`ลบหน่วยการเรียนรู้ "${unitTitle}" เรียบร้อยแล้ว`);
+      },
+    });
   };
 
   // Add Sub-Lesson
@@ -371,44 +434,60 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     setLessonVideoUrl(newLesson.videoUrl);
     setShowAddLessonModal(false);
     setNewLessonTitle('');
+    setToastMsg(`เพิ่มบทเรียน "${newLesson.title}" เรียบร้อยแล้ว`);
   };
 
   // Delete Sub-Lesson
   const handleDeleteSubLesson = (unitId: string, lessonId: string, lessonTitleStr: string) => {
     const targetUnit = curriculum.find((u) => u.id === unitId);
     if (!targetUnit || targetUnit.lessons.length <= 1) {
-      alert('แต่ละหน่วยการเรียนรู้ต้องมีบทเรียนย่อยอย่างน้อย 1 บทเรียน');
+      setConfirmDialog({
+        isOpen: true,
+        title: 'ไม่สามารถลบบทเรียนย่อยได้',
+        message: 'แต่ละหน่วยการเรียนรู้ต้องมีบทเรียนย่อยอย่างน้อย 1 บทเรียน',
+        confirmText: 'รับทราบ',
+        isDanger: false,
+        onConfirm: () => {},
+      });
       return;
     }
 
-    if (confirm(`คุณต้องการลบบทเรียนย่อย "${lessonTitleStr}" หรือไม่?`)) {
-      setCurriculum((prev) =>
-        prev.map((u) => {
-          if (u.id === unitId) {
-            const filtered = u.lessons.filter((l) => l.id !== lessonId);
-            return {
-              ...u,
-              lessonsCount: filtered.length,
-              lessons: filtered.map((l, idx) => ({
-                ...l,
-                numberStr: `${u.unitNumber}.${idx + 1}`,
-              })),
-            };
-          }
-          return u;
-        })
-      );
+    setConfirmDialog({
+      isOpen: true,
+      title: 'ยืนยันการลบบทเรียนย่อย',
+      message: `คุณต้องการลบบทเรียนย่อย "${lessonTitleStr}" หรือไม่?`,
+      confirmText: 'ลบบทเรียน',
+      isDanger: true,
+      onConfirm: () => {
+        setCurriculum((prev) =>
+          prev.map((u) => {
+            if (u.id === unitId) {
+              const filtered = u.lessons.filter((l) => l.id !== lessonId);
+              return {
+                ...u,
+                lessonsCount: filtered.length,
+                lessons: filtered.map((l, idx) => ({
+                  ...l,
+                  numberStr: `${u.unitNumber}.${idx + 1}`,
+                })),
+              };
+            }
+            return u;
+          })
+        );
 
-      if (selectedLessonId === lessonId) {
-        const remainingLessons = targetUnit.lessons.filter((l) => l.id !== lessonId);
-        if (remainingLessons.length > 0) {
-          setSelectedLessonId(remainingLessons[0].id);
-          setLessonTitle(remainingLessons[0].title);
-          setLessonDesc(remainingLessons[0].description || '');
-          setLessonVideoUrl(remainingLessons[0].videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+        if (selectedLessonId === lessonId) {
+          const remainingLessons = targetUnit.lessons.filter((l) => l.id !== lessonId);
+          if (remainingLessons.length > 0) {
+            setSelectedLessonId(remainingLessons[0].id);
+            setLessonTitle(remainingLessons[0].title);
+            setLessonDesc(remainingLessons[0].description || '');
+            setLessonVideoUrl(remainingLessons[0].videoUrl || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+          }
         }
-      }
-    }
+        setToastMsg(`ลบบทเรียนย่อย "${lessonTitleStr}" เรียบร้อยแล้ว`);
+      },
+    });
   };
 
   // Add new grade level
@@ -428,17 +507,176 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     setGradeLevels((prev) => [...prev, newLvl]);
     setNewLevelName('');
     setNewLevelTrack('');
+    setToastMsg(`เพิ่มระดับชั้น "${newLvl.name}" เรียบร้อยแล้ว`);
   };
 
-  // Delete student row
-  const handleDeleteStudent = (id: string) => {
-    if (confirm('ต้องการลบข้อมูลนักเรียนรายนี้ออกจากระบบหรือไม่?')) {
-      setStudents((prev) => prev.filter((s) => s.studentId !== id));
-      setScores((prev) => prev.filter((sc) => sc.studentId !== id));
+  // Start editing an existing grade level
+  const handleStartEditLevel = (lvl: GradeLevel) => {
+    setEditingLevelId(lvl.id);
+    setEditLevelName(lvl.name);
+    setEditLevelTrack(lvl.track);
+    setEditLevelCount(lvl.studentCount || 40);
+  };
+
+  // Save edited grade level without deleting
+  const handleSaveEditLevel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLevelId || !editLevelName.trim()) return;
+
+    setGradeLevels((prev) =>
+      prev.map((l) =>
+        l.id === editingLevelId
+          ? {
+              ...l,
+              name: editLevelName.trim(),
+              track: editLevelTrack.trim() || l.track,
+              studentCount: Number(editLevelCount) || l.studentCount,
+            }
+          : l
+      )
+    );
+    setToastMsg(`บันทึกการแก้ไขระดับชั้น "${editLevelName.trim()}" เรียบร้อยแล้ว`);
+    setEditingLevelId(null);
+  };
+
+  const handleCancelEditLevel = () => {
+    setEditingLevelId(null);
+  };
+
+  // Delete grade level with confirmation
+  const handleDeleteGradeLevel = (lvlId: string, lvlName: string) => {
+    if (gradeLevels.length <= 1) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'ไม่สามารถลบระดับชั้นได้',
+        message: 'ต้องมีระดับชั้นเรียนอย่างน้อย 1 ระดับชั้นในระบบ',
+        confirmText: 'รับทราบ',
+        isDanger: false,
+        onConfirm: () => {},
+      });
+      return;
     }
+
+    setConfirmDialog({
+      isOpen: true,
+      title: 'ยืนยันการลบระดับชั้น',
+      message: `คุณต้องการลบระดับชั้น "${lvlName}" หรือไม่?\n\n(การดำเนินการนี้จะไม่ลบนักเรียน แต่จะนำระดับชั้นออกจากตัวเลือก)`,
+      confirmText: 'ลบระดับชั้น',
+      isDanger: true,
+      onConfirm: () => {
+        setGradeLevels((prev) => prev.filter((l) => l.id !== lvlId));
+        setToastMsg(`ลบระดับชั้น "${lvlName}" เรียบร้อยแล้ว`);
+      },
+    });
+  };
+
+  // Delete student row with in-app confirmation dialog
+  const handleDeleteStudent = (id: string, name?: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'ยืนยันการลบข้อมูลนักเรียนและประวัติคะแนน',
+      message: `คุณต้องการลบข้อมูลของ "${name || id}" ออกจากระบบลงทะเบียนและตารางคะแนนทั้งหมดหรือไม่?\n\n(ระบบจะลบข้อมูลบัญชีและคะแนนสอบทั้งหมดของนักเรียนคนนี้ออกจากระบบอย่างถาวร)`,
+      confirmText: 'ลบข้อมูลและคะแนนนักเรียน',
+      isDanger: true,
+      onConfirm: () => {
+        if (onDeleteStudent) {
+          onDeleteStudent(id);
+        } else {
+          setStudents((prev) => prev.filter((s) => s.studentId !== id));
+          setScores((prev) => prev.filter((sc) => sc.studentId !== id));
+        }
+        setToastMsg(`ลบข้อมูลนักเรียน "${name || id}" และคะแนนที่เกี่ยวข้องเรียบร้อยแล้ว`);
+      },
+    });
   };
 
   // Filtered scores for Tab 2
+  const adminScoresTableRef = useRef<HTMLDivElement>(null);
+  const [isExportingAdminPdf, setIsExportingAdminPdf] = useState(false);
+
+  // Export scores for Google Sheets (.csv)
+  const handleExportGoogleSheetCsv = () => {
+    const headers = [
+      'เลขที่',
+      'รหัสนักเรียน',
+      'ชื่อ',
+      'นามสกุล',
+      'ระดับชั้น',
+      'วิชา',
+      'หน่วยที่ 1 (15 คะแนน)',
+      'หน่วยที่ 2 (15 คะแนน)',
+      'สอบย่อย (20 คะแนน)',
+      'รวม (50 คะแนน)',
+      'ร้อยละ',
+      'สถานะการประเมิน',
+    ];
+
+    const rows = filteredScores.map((sc) => {
+      const percentage = ((sc.totalScore / 50) * 100).toFixed(1);
+      return [
+        sc.studentNo,
+        sc.studentId,
+        sc.firstName,
+        sc.lastName,
+        sc.classRoom,
+        sc.subject,
+        sc.unit1Score.toFixed(1),
+        sc.unit2Score.toFixed(1),
+        sc.quizScore.toFixed(1),
+        sc.totalScore.toFixed(1),
+        `${percentage}%`,
+        sc.status,
+      ];
+    });
+
+    const csvContent =
+      '\uFEFF' +
+      [
+        headers.join(','),
+        ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+      ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
+      now.getDate()
+    ).padStart(2, '0')}`;
+    link.setAttribute('download', `ตารางคะแนน_${scoreClassFilter === 'all' ? 'ทุกชั้น' : scoreClassFilter}_${dateStr}_GoogleSheets.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setToastMsg('ดาวน์โหลดไฟล์คะแนนสำหรับ Google Sheets เรียบร้อยแล้ว');
+  };
+
+  // Export scores table as PDF
+  const handleExportAdminPdf = async () => {
+    if (!adminScoresTableRef.current || isExportingAdminPdf) return;
+    setIsExportingAdminPdf(true);
+    try {
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
+        now.getDate()
+      ).padStart(2, '0')}`;
+      const filename = `ตารางคะแนน_${scoreClassFilter === 'all' ? 'ทุกชั้น' : scoreClassFilter}_${dateStr}.pdf`;
+      const success = await downloadElementAsPdf(adminScoresTableRef.current, {
+        filename,
+        orientation: 'landscape',
+        scale: 2,
+      });
+      if (success) {
+        setToastMsg('ดาวน์โหลดตารางคะแนนเป็นไฟล์ PDF เรียบร้อยแล้ว');
+      }
+    } catch (err) {
+      console.error('Admin PDF export error:', err);
+    } finally {
+      setIsExportingAdminPdf(false);
+    }
+  };
+
   const filteredScores = scores.filter((sc) => {
     const matchSearch =
       !scoreSearch ||
@@ -480,18 +718,28 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
               />
             </div>
             <div className="flex flex-col">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-[#bb0112] font-bold uppercase tracking-wider flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-[#bb0112]"></span>
                   ADMIN & TEACHER CONTROL PANEL
                 </span>
                 <button
                   onClick={() => setShowTitleModal(true)}
-                  className="px-2 py-0.5 rounded text-[11px] bg-[#eff4ff] text-[#00173b] hover:bg-[#dce9ff] border border-[#dce9ff] flex items-center gap-1 font-semibold"
+                  className="px-2 py-0.5 rounded text-[11px] bg-[#eff4ff] text-[#00173b] hover:bg-[#dce9ff] border border-[#dce9ff] flex items-center gap-1 font-semibold transition-colors"
                   id="btn-edit-school-title"
                 >
                   <span className="material-symbols-outlined text-[14px]">edit</span>
                   <span>แก้ไขชื่อโรงเรียน/หัวข้อ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowContactModal(true)}
+                  className="px-2 py-0.5 rounded text-[11px] bg-[#eff4ff] text-[#bb0112] hover:bg-[#ffdad6] border border-[#dce9ff] flex items-center gap-1 font-semibold transition-colors"
+                  id="btn-admin-edit-contact"
+                  title="แก้ไขข้อมูลติดต่อครูและแสดงในหน้าแรก"
+                >
+                  <span className="material-symbols-outlined text-[14px]">support_agent</span>
+                  <span>แก้ไขข้อมูลติดต่อครู</span>
                 </button>
               </div>
               <h1 className="text-xl md:text-2xl text-[#00173b] font-bold leading-tight">
@@ -512,17 +760,30 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                 <span>{adminUser?.email || 'admin.satit@gmail.com'}</span>
               </div>
               <span className="text-[11px] text-[#747780]">
-                {adminUser?.name || 'Google Workspace Verified'} • ซิงค์เรียลไทม์
+                {adminUser?.name || 'Google Workspace Verified'} • ซิงค์แยกตามอีเมล
               </span>
             </div>
-            <button
-              onClick={onLogoutAdmin}
-              className="p-1.5 rounded-lg text-[#bb0112] hover:bg-[#ffdad6] transition-colors ml-2"
-              title="ออกจากระบบแอดมิน"
-              id="btn-admin-logout"
-            >
-              <span className="material-symbols-outlined text-[20px]">logout</span>
-            </button>
+            <div className="flex items-center gap-1 ml-2">
+              {onResetAccountData && (
+                <button
+                  type="button"
+                  onClick={onResetAccountData}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors"
+                  title="รีเซ็ตข้อมูลของบัญชีนี้กลับเป็นค่าเริ่มต้น"
+                  id="btn-admin-reset-account"
+                >
+                  <span className="material-symbols-outlined text-[18px]">restart_alt</span>
+                </button>
+              )}
+              <button
+                onClick={onLogoutAdmin}
+                className="p-1.5 rounded-lg text-[#bb0112] hover:bg-[#ffdad6] transition-colors"
+                title="ออกจากระบบแอดมิน"
+                id="btn-admin-logout"
+              >
+                <span className="material-symbols-outlined text-[20px]">logout</span>
+              </button>
+            </div>
           </div>
         </header>
 
@@ -1134,18 +1395,32 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
 
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => alert('ทำการส่งข้อมูลคะแนนชุดล่าสุดเข้า Google Sheets เรียบร้อยแล้ว')}
-                  className="px-3 py-1.5 rounded-lg bg-[#00173b] text-white text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0f2c59] shadow-xs"
+                  onClick={handleExportGoogleSheetCsv}
+                  className="px-3.5 py-2 rounded-lg bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 hover:bg-emerald-800 shadow-xs transition-all"
+                  id="btn-admin-download-googlesheet"
+                  title="ดาวน์โหลดตารางคะแนนสำหรับเปิดใน Google Sheets หรือ Excel (.csv)"
                 >
-                  <span className="material-symbols-outlined text-[16px]">cloud_sync</span>
-                  <span>ซิงก์ไป Google Sheet</span>
+                  <span className="material-symbols-outlined text-[16px]">table_chart</span>
+                  <span>ดาวน์โหลด Google Sheets</span>
                 </button>
                 <button
-                  onClick={() => window.print()}
-                  className="px-3 py-1.5 rounded-lg bg-[#eff4ff] text-[#00173b] text-xs font-semibold flex items-center gap-1.5 hover:bg-[#dce9ff] border border-[#dce9ff]"
+                  onClick={handleExportAdminPdf}
+                  disabled={isExportingAdminPdf}
+                  className="px-3.5 py-2 rounded-lg bg-[#00173b] hover:bg-[#0f2c59] disabled:opacity-75 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all"
+                  id="btn-admin-download-pdf"
+                  title="ดาวน์โหลดตารางคะแนนเป็นไฟล์ PDF"
                 >
-                  <span className="material-symbols-outlined text-[16px]">print</span>
-                  <span>พิมพ์รายงาน</span>
+                  {isExportingAdminPdf ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      <span>กำลังสร้าง PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+                      <span>ดาวน์โหลด PDF</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -1182,7 +1457,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
             </div>
 
             {/* Scores Table */}
-            <div className="overflow-x-auto border border-[#e6eeff] rounded-xl">
+            <div ref={adminScoresTableRef} className="overflow-x-auto border border-[#e6eeff] rounded-xl bg-white p-2">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#eff4ff] text-[#00173b] font-bold border-b border-[#dce9ff]">
@@ -1195,7 +1470,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                     <th className="py-3 px-3 text-right">สอบย่อย (20)</th>
                     <th className="py-3 px-3 text-right font-bold">รวม (50)</th>
                     <th className="py-3 px-3 text-center">สถานะ</th>
-                    <th className="py-3 px-3 text-center w-20">จัดการ</th>
+                    <th className="py-3 px-3 text-center w-28">จัดการ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#e6eeff]">
@@ -1227,29 +1502,24 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-center">
-                        <button
-                          onClick={() => {
-                            const newScore = prompt(`กรอกคะแนนสอบย่อยใหม่สำหรับ ${sc.firstName}:`, sc.quizScore.toString());
-                            if (newScore !== null && !isNaN(Number(newScore))) {
-                              const parsed = Number(newScore);
-                              setScores((prev) =>
-                                prev.map((item) =>
-                                  item.studentId === sc.studentId
-                                    ? {
-                                        ...item,
-                                        quizScore: parsed,
-                                        totalScore: item.unit1Score + item.unit2Score + parsed,
-                                      }
-                                    : item
-                                )
-                              );
-                            }
-                          }}
-                          className="p-1 text-[#00173b] hover:bg-[#eff4ff] rounded"
-                          title="แก้ไขคะแนน"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">edit</span>
-                        </button>
+                        <div className="inline-flex items-center gap-1 justify-center">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedScoreForReport(sc)}
+                            className="p-1.5 text-[#00173b] hover:bg-[#dce9ff] rounded transition-colors"
+                            title="ดูใบรายงานผลการเรียน / ดาวน์โหลด PDF หรือ Google Sheets"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedScoreForEdit(sc)}
+                            className="p-1.5 text-[#00173b] hover:bg-[#eff4ff] rounded transition-colors"
+                            title="แก้ไขคะแนน"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">edit</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1299,11 +1569,22 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                 {gradeLevels.map((lvl) => (
                   <div
                     key={lvl.id}
-                    className="p-2.5 px-3 rounded-lg bg-[#eff4ff] border border-[#dce9ff] flex items-center gap-2 text-xs"
+                    className="p-2.5 px-3 rounded-lg bg-[#eff4ff] border border-[#dce9ff] flex items-center gap-2 text-xs group hover:bg-[#dce9ff] transition-all"
                   >
                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                     <span className="font-bold text-[#00173b]">{lvl.name}</span>
                     <span className="text-[#747780]">({lvl.studentCount} คน)</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleStartEditLevel(lvl);
+                        setShowLevelsModal(true);
+                      }}
+                      className="ml-1 p-0.5 rounded text-[#00173b] hover:bg-white/80 transition-colors"
+                      title="แก้ไขระดับชั้นนี้"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">edit</span>
+                    </button>
                   </div>
                 ))}
               </div>
@@ -1392,7 +1673,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                               onClick={() => {
                                 const p = st.password || '123456';
                                 navigator.clipboard?.writeText(p);
-                                alert(`คัดลอกรหัสผ่าน ${p} ของ ${st.firstName} ${st.lastName} แล้ว`);
+                                setToastMsg(`คัดลอกรหัสผ่าน ${p} ของ ${st.firstName} ${st.lastName} แล้ว`);
                               }}
                               className="text-[#747780] hover:text-[#00173b] p-0.5 rounded transition-colors"
                               title="คัดลอกรหัสผ่าน"
@@ -1409,8 +1690,8 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <button
-                            onClick={() => handleDeleteStudent(st.studentId)}
-                            className="p-1 rounded text-[#ba1a1a] hover:bg-[#ffdad6]"
+                            onClick={() => handleDeleteStudent(st.studentId, `${st.firstName} ${st.lastName}`)}
+                            className="p-1 rounded text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors"
                             title="ลบนักเรียน"
                           >
                             <span className="material-symbols-outlined text-[16px]">delete</span>
@@ -1539,20 +1820,118 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
               </form>
 
               {/* Existing Levels */}
-              <div className="max-h-60 overflow-y-auto space-y-2">
+              <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                <span className="text-[11px] font-bold text-[#44474f] block">
+                  รายการระดับชั้นปัจจุบัน ({gradeLevels.length} ระดับชั้น)
+                </span>
                 {gradeLevels.map((lvl) => (
-                  <div key={lvl.id} className="p-2.5 rounded-lg border border-[#e6eeff] flex items-center justify-between text-xs">
-                    <div>
-                      <div className="font-bold text-[#00173b]">{lvl.name}</div>
-                      <div className="text-[11px] text-[#747780]">{lvl.track}</div>
-                    </div>
-                    <button
-                      onClick={() => setGradeLevels((prev) => prev.filter((l) => l.id !== lvl.id))}
-                      className="text-[#ba1a1a] p-1 hover:bg-[#ffdad6] rounded"
-                      title="ลบระดับชั้น"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">delete</span>
-                    </button>
+                  <div key={lvl.id}>
+                    {editingLevelId === lvl.id ? (
+                      <form
+                        onSubmit={handleSaveEditLevel}
+                        className="p-3 rounded-xl border-2 border-[#00173b] bg-[#eff4ff] flex flex-col gap-2.5 text-xs shadow-sm"
+                      >
+                        <div className="flex items-center justify-between text-[#00173b] font-bold">
+                          <span className="flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[16px] text-[#00173b]">edit_note</span>
+                            <span>แก้ไขข้อมูลระดับชั้น</span>
+                          </span>
+                          <span className="text-[10px] text-[#747780] font-mono">{lvl.id}</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div className="sm:col-span-2">
+                            <label className="text-[11px] text-[#44474f] font-semibold block mb-0.5" htmlFor="input-edit-level-name">
+                              ชื่อระดับชั้น *
+                            </label>
+                            <input
+                              id="input-edit-level-name"
+                              type="text"
+                              value={editLevelName}
+                              onChange={(e) => setEditLevelName(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-[#dce9ff] rounded-lg text-xs outline-none font-bold text-[#00173b] focus:ring-2 focus:ring-[#00173b]"
+                              placeholder="เช่น มัธยมศึกษาปีที่ 4/1"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] text-[#44474f] font-semibold block mb-0.5" htmlFor="input-edit-level-count">
+                              จำนวน นร. (คน)
+                            </label>
+                            <input
+                              id="input-edit-level-count"
+                              type="number"
+                              min={1}
+                              value={editLevelCount}
+                              onChange={(e) => setEditLevelCount(Number(e.target.value))}
+                              className="w-full px-2.5 py-1.5 bg-white border border-[#dce9ff] rounded-lg text-xs outline-none text-center font-bold focus:ring-2 focus:ring-[#00173b]"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] text-[#44474f] font-semibold block mb-0.5" htmlFor="input-edit-level-track">
+                            แผนการเรียน / รายวิชา
+                          </label>
+                          <input
+                            id="input-edit-level-track"
+                            type="text"
+                            value={editLevelTrack}
+                            onChange={(e) => setEditLevelTrack(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white border border-[#dce9ff] rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#00173b]"
+                            placeholder="เช่น คลังบทเรียน 8 วิชา • แผนวิทย์-คณิต"
+                          />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleCancelEditLevel}
+                            className="px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 text-xs"
+                          >
+                            ยกเลิก
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-3.5 py-1.5 rounded-lg bg-[#00173b] text-white font-bold hover:bg-[#0f2c59] text-xs flex items-center gap-1 shadow-sm"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">save</span>
+                            <span>บันทึกการแก้ไข</span>
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="p-2.5 rounded-lg border border-[#e6eeff] hover:border-[#b8c7e0] flex items-center justify-between text-xs bg-white transition-all">
+                        <div className="flex-1 pr-2">
+                          <div className="font-bold text-[#00173b] flex items-center gap-2">
+                            <span>{lvl.name}</span>
+                            <span className="text-[10px] bg-[#eff4ff] text-[#00173b] px-2 py-0.5 rounded font-mono font-bold">
+                              {lvl.studentCount || 40} คน
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-[#747780] mt-0.5">{lvl.track}</div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditLevel(lvl)}
+                            className="text-[#00173b] px-2.5 py-1.5 bg-[#eff4ff] hover:bg-[#dce9ff] border border-[#dce9ff] rounded-lg transition-colors flex items-center gap-1 font-semibold text-xs"
+                            title="แก้ไขระดับชั้นนี้โดยไม่ต้องลบ"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">edit</span>
+                            <span>แก้ไข</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteGradeLevel(lvl.id, lvl.name)}
+                            className="text-[#ba1a1a] p-1.5 hover:bg-[#ffdad6] rounded-lg transition-colors"
+                            title="ลบระดับชั้น"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1820,6 +2199,55 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                 </div>
               </form>
             </div>
+          </div>
+        )}
+
+        {/* MODAL 5: EDIT CONTACT INFO */}
+        <EditContactModal
+          isOpen={showContactModal}
+          onClose={() => setShowContactModal(false)}
+          contactInfo={contactInfo || initialContactInfo}
+          currentContact={contactInfo || initialContactInfo}
+          onSave={(updated) => {
+            setContactInfo?.(updated);
+            setToastMsg('บันทึกข้อมูลติดต่อครูเรียบร้อยแล้ว และระบบนำไปแสดงบนหน้าแรกทันที');
+          }}
+        />
+
+        {/* MODAL 6: REUSABLE SAFE CONFIRMATION DIALOG */}
+        <ConfirmDialogModal
+          state={confirmDialog}
+          onClose={() => setConfirmDialog(null)}
+        />
+
+        {/* MODAL 7: INDIVIDUAL STUDENT REPORT CARD (PRINTABLE) */}
+        <ReportCardModal
+          score={selectedScoreForReport}
+          onClose={() => setSelectedScoreForReport(null)}
+          schoolName={schoolName}
+        />
+
+        {/* MODAL 8: DETAILED EDIT SCORE MODAL */}
+        <EditScoreModal
+          score={selectedScoreForEdit}
+          onClose={() => setSelectedScoreForEdit(null)}
+          onSave={(updated) => {
+            setScores((prev) => prev.map((s) => (s.studentId === updated.studentId ? updated : s)));
+            setToastMsg(`บันทึกคะแนนของ ${updated.firstName} ${updated.lastName} สำเร็จ`);
+          }}
+        />
+
+        {/* FLOATING TOAST NOTIFICATION */}
+        {toastMsg && (
+          <div className="fixed bottom-6 right-6 z-50 bg-[#00173b] text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-semibold animate-fade-in border border-[#dce9ff]/20">
+            <span className="material-symbols-outlined text-emerald-400 text-[20px]">check_circle</span>
+            <span>{toastMsg}</span>
+            <button
+              onClick={() => setToastMsg(null)}
+              className="ml-2 text-white/60 hover:text-white transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
           </div>
         )}
 

@@ -1,4 +1,4 @@
-import { Student, StudentScore, CurriculumUnit, GradeLevel } from '../types';
+import { Student, StudentScore, CurriculumUnit, GradeLevel, ContactInfo } from '../types';
 
 export const SCHOOL_LOGO_URL =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuA2wnlK0fM628PAIaLQ72DOya-M2Ne-pr7Kk-az-xig_NtZkLe8HjrGjrAQnWUDeMlfOQ35n2iKtWFdnhv0Th1f4A-uo5aIMk7m7CcvVawReEyeyAHe2WhbjlRJa3ObqktqTZMHmmK2F4f5OO40pD0gidA3pQbCozfoCtm0RIr1zyP7CiNxYhUX86D35kFBwcoQJ9ZL9OFpadr59T6g5bendQICTK4DXNx-6ZNqz9788IFzZNjRWQPqJA55B9pbLpMbQd0';
@@ -500,3 +500,13 @@ export const initialGradeLevels: GradeLevel[] = [
     category: 'late',
   },
 ];
+
+export const initialContactInfo: ContactInfo = {
+  title: 'ศูนย์ช่วยเหลือนักเรียนและบริการวิชาการ',
+  subtitle: 'หากลืมรหัสผ่านหรือไม่มีรายชื่อในฐานข้อมูล Google Sheets กรุณาติดต่อ:',
+  officeLocation: 'ห้องวิชาการและเทคโนโลยีสารสนเทศ อาคาร 2 ชั้น 3',
+  phone: '032-337-1234 (ต่อ 104)',
+  email: 'admin.satit@rb-muni.ac.th',
+  workingHours: 'จันทร์ - ศุกร์ 08:00 - 16:30 น.',
+  note: '* นักเรียนสามารถขอรีเซ็ตรหัสผ่านได้โดยแจ้งเลขประจำตัวประชาชนหรือรหัสประจำตัวนักเรียน 5-6 หลักกับครูประจำชั้น',
+};

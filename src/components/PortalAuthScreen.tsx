@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { SCHOOL_LOGO_URL } from '../data/initialData';
-import { Student } from '../types';
+import { SCHOOL_LOGO_URL, initialContactInfo } from '../data/initialData';
+import { Student, ContactInfo } from '../types';
 
 interface PortalAuthScreenProps {
   students: Student[];
@@ -8,6 +8,7 @@ interface PortalAuthScreenProps {
   onRegisterStudent: (newStudent: Student) => boolean;
   onNavigateScores: () => void;
   schoolName: string;
+  contactInfo?: ContactInfo;
 }
 
 export const PortalAuthScreen: React.FC<PortalAuthScreenProps> = ({
@@ -16,7 +17,9 @@ export const PortalAuthScreen: React.FC<PortalAuthScreenProps> = ({
   onRegisterStudent,
   onNavigateScores,
   schoolName,
+  contactInfo,
 }) => {
+  const currentContact: ContactInfo = { ...initialContactInfo, ...(contactInfo || {}) };
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [levelFilter, setLevelFilter] = useState<'early' | 'late'>('early');
   const [showPassword, setShowPassword] = useState(false);
@@ -744,19 +747,60 @@ export const PortalAuthScreen: React.FC<PortalAuthScreenProps> = ({
               </div>
             </div>
 
-            {/* Live Support Card */}
+            {/* Direct Contact & Support Info Card on Home Screen */}
+            <div className="bg-white rounded-xl p-5 border border-[#dce9ff] shadow-sm space-y-3">
+              <div className="flex items-center justify-between border-b border-[#e6eeff] pb-2.5">
+                <div className="flex items-center gap-2 text-[#00173b]">
+                  <span className="material-symbols-outlined text-[#bb0112] text-[22px]">contact_support</span>
+                  <h5 className="font-bold text-sm text-[#00173b]">{currentContact.title}</h5>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                  เปิดบริการ
+                </span>
+              </div>
+              <p className="text-xs text-[#44474f] leading-relaxed">
+                {currentContact.subtitle}
+              </p>
+              <div className="p-3.5 bg-[#eff4ff]/80 rounded-xl space-y-1.5 text-xs">
+                <div className="flex items-start gap-2 text-[#00173b]">
+                  <span className="material-symbols-outlined text-[16px] text-[#00173b] shrink-0 mt-0.5">location_on</span>
+                  <span className="font-semibold">{currentContact.officeLocation}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[#44474f]">
+                  <span className="material-symbols-outlined text-[16px] text-[#44474f] shrink-0">call</span>
+                  <span>โทรศัพท์ภายใน: <strong className="text-[#00173b]">{currentContact.phone}</strong></span>
+                </div>
+                <div className="flex items-center gap-2 text-[#44474f]">
+                  <span className="material-symbols-outlined text-[16px] text-[#44474f] shrink-0">mail</span>
+                  <span>อีเมล: <strong className="text-[#00173b] font-mono">{currentContact.email}</strong></span>
+                </div>
+                <div className="flex items-center gap-2 text-[#44474f]">
+                  <span className="material-symbols-outlined text-[16px] text-[#44474f] shrink-0">schedule</span>
+                  <span>เวลาทำการ: <strong className="text-[#00173b]">{currentContact.workingHours}</strong></span>
+                </div>
+              </div>
+              {currentContact.note && (
+                <p className="text-[11px] text-[#747780] leading-relaxed italic">
+                  {currentContact.note}
+                </p>
+              )}
+            </div>
+
+            {/* Live Support Quick Button Card */}
             <div className="bg-[#00173b] text-white rounded-xl p-5 flex items-center justify-between shadow-sm">
               <div className="flex items-center gap-3">
                 <span className="material-symbols-outlined text-[32px] text-[#d8e2ff]">contact_support</span>
                 <div>
-                  <h5 className="font-semibold text-sm text-white">ศูนย์ช่วยเหลือนักเรียน</h5>
-                  <p className="text-xs text-[#d5e3fc]">ห้องปฏิบัติการคอมพิวเตอร์ อาคาร 2 ชั้น 3</p>
+                  <h5 className="font-semibold text-sm text-white">{currentContact.title}</h5>
+                  <p className="text-xs text-[#d5e3fc] line-clamp-1">{currentContact.officeLocation}</p>
                 </div>
               </div>
               <button
-                className="px-4 py-2 rounded-lg bg-white text-[#00173b] text-xs font-bold hover:bg-[#eff4ff] transition-colors"
+                className="px-4 py-2 rounded-lg bg-white text-[#00173b] text-xs font-bold hover:bg-[#eff4ff] transition-colors shrink-0"
                 onClick={() => setShowHelpModal(true)}
                 type="button"
+                id="btn-open-help-modal"
               >
                 ติดต่อครู
               </button>
@@ -785,7 +829,7 @@ export const PortalAuthScreen: React.FC<PortalAuthScreenProps> = ({
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-lg text-[#00173b] flex items-center gap-2">
                   <span className="material-symbols-outlined text-[#bb0112]">contact_support</span>
-                  <span>ศูนย์ช่วยเหลือนักเรียนและบริการวิชาการ</span>
+                  <span>{currentContact.title}</span>
                 </h3>
                 <button
                   onClick={() => setShowHelpModal(false)}
@@ -795,16 +839,18 @@ export const PortalAuthScreen: React.FC<PortalAuthScreenProps> = ({
                 </button>
               </div>
               <div className="space-y-2.5 text-xs text-[#44474f] leading-relaxed">
-                <p>หากลืมรหัสผ่านหรือไม่มีรายชื่อในฐานข้อมูล Google Sheets กรุณาติดต่อ:</p>
+                <p>{currentContact.subtitle}</p>
                 <div className="p-3 bg-[#eff4ff] rounded-lg space-y-1">
-                  <p className="font-bold text-[#00173b]">ห้องวิชาการและเทคโนโลยีสารสนเทศ อาคาร 2 ชั้น 3</p>
-                  <p>โทรศัพท์ภายใน: 032-337-1234 (ต่อ 104)</p>
-                  <p>อีเมล: admin.satit@rb-muni.ac.th</p>
-                  <p>เวลาทำการ: จันทร์ - ศุกร์ 08:00 - 16:30 น.</p>
+                  <p className="font-bold text-[#00173b]">{currentContact.officeLocation}</p>
+                  <p>โทรศัพท์ภายใน: {currentContact.phone}</p>
+                  <p>อีเมล: {currentContact.email}</p>
+                  <p>เวลาทำการ: {currentContact.workingHours}</p>
                 </div>
-                <p className="text-[11px] text-[#747780]">
-                  * นักเรียนสามารถขอรีเซ็ตรหัสผ่านได้โดยแจ้งเลขประจำตัวประชาชนหรือรหัสนักเรียน 5-6 หลักกับครูประจำชั้น
-                </p>
+                {currentContact.note && (
+                  <p className="text-[11px] text-[#747780]">
+                    {currentContact.note}
+                  </p>
+                )}
               </div>
               <div className="flex justify-end pt-2">
                 <button

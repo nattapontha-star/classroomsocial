@@ -74,3 +74,13 @@ export interface GradeLevel {
   lessonCount: number;
   category: 'early' | 'late';
 }
+
+export interface ContactInfo {
+  title: string;
+  subtitle: string;
+  officeLocation: string;
+  phone: string;
+  email: string;
+  workingHours: string;
+  note: string;
+}
